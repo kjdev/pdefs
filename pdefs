@@ -1,0 +1,149 @@
+#!/usr/bin/env php
+<?php
+function main($filename, array $options = array('class', 'function', 'const'), $buffer = false) {
+    $types = array();
+
+    foreach ($options as $val) {
+        switch ($val) {
+            case 'class':
+                array_push($types, 'class\s');
+                break;
+            case 'function':
+                array_push($types, 'function\s');
+                array_push($types, '(?:(?:public\s|private\s|protected\s)function)');
+                array_push($types, '(?:(?:static\s)(?:public\s|private\s|protected\s)function)');
+                array_push($types, '(?:(?:public\s|private\s|protected\s)(?: static\s )function)');
+                break;
+            case 'include':
+                array_push($types, 'include\b');
+                array_push($types, 'include_once\b');
+                array_push($types, 'require\b');
+                array_push($types, 'require_once\b');
+                break;
+            case 'const':
+                array_push($types, 'const\s');
+                break;
+        }
+    }
+
+    if (empty($types)) {
+        return;
+    }
+
+    $re = '/\A\s*(?:' . implode('|', $types) . ')/x';
+
+    if (file_exists($filename)) {
+        $f = fopen($filename, 'r');
+        if ($f) {
+            $line = false;
+            while (!feof($f)) {
+                $buf = fgets($f, 4096);
+                if (preg_match($re, $buf)) {
+                    $buf = strtr($buf, array("\r" => '', "\n" => ''));
+                    $i = end_point($buf);
+                    if ($i === false) {
+                        echo rtrim($buf), PHP_EOL;
+                        $line = true;
+                    } else if ($i > 0) {
+                        echo rtrim(substr($buf, 0, $i)), PHP_EOL;
+                    }
+                } else if ($line === true) {
+                    $buf = strtr($buf, array("\r" => '', "\n" => ''));
+                    $i = end_point($buf);
+                    if ($i === false) {
+                        echo rtrim($buf), PHP_EOL;
+                        $line = true;
+                    } else {
+                        $line = false;
+                        if ($i > 0) {
+                            echo rtrim(substr($buf, 0, $i)), PHP_EOL;
+                        }
+                    }
+                }
+            }
+        }
+    } else if (!empty($filename) && $buffer) {
+        $f = explode(PHP_EOL, $filename);
+        $line = false;
+        foreach ($f as $buf) {
+            if (preg_match($re, $buf)) {
+                $buf = strtr($buf, array("\r" => '', "\n" => ''));
+                $i = end_point($buf);
+                if ($i === false) {
+                    echo rtrim($buf), PHP_EOL;
+                    $line = true;
+                } else if ($i > 0) {
+                    echo rtrim(substr($buf, 0, $i)), PHP_EOL;
+                }
+            } else if ($line === true) {
+                $buf = strtr($buf, array("\r" => '', "\n" => ''));
+                $i = end_point($buf);
+                if ($i === false) {
+                    echo rtrim($buf), PHP_EOL;
+                    $line = true;
+                } else {
+                    $line = false;
+                    if ($i > 0) {
+                        echo rtrim(substr($buf, 0, $i)), PHP_EOL;
+                    }
+                }
+            }
+        }
+    } else {
+        echo "pdef: $filename not exists!\n";
+    }
+}
+
+function end_point($buf) {
+    $i = strpos($buf, ')');
+    if ($i === false) {
+        $i = strpos($buf, '{');
+        if ($i === false) {
+            $i = strpos($buf, ';');
+        }
+    } else {
+        $i++;
+    }
+    return $i;
+}
+
+if (!extension_loaded('pcre')) {
+    echo "pdef: pcre extension must be loaded!\n";
+    exit(1);
+}
+
+$options = array(
+    '--class',
+    '--function',
+    '--include',
+    '--const',
+);
+
+if ($argc === 2) {
+    main($argv[1]);
+} else if ($argc < 2) {
+    $buf = file_get_contents('php://stdin');
+    if (!empty($buf)) {
+        main($buf, array('class', 'function', 'const'), true);
+    } else {
+        echo "pdef: invalid arguments!\n";
+        exit(1);
+    }
+} else {
+    $filename = '';
+    $opts = array();
+    for ($i = 1; $i < $argc; $i++)
+    {
+        if (preg_match('/^\-\-/', $argv[$i]) < 1) {
+            $filename = $argv[$i];
+        } else {
+            if (!in_array($argv[$i], $options)) {
+                echo "pdef: invalid arguments!\n";
+                exit(1);
+            }
+            $opt = preg_replace('/^\-\-/', '', $argv[$i]);
+            array_push($opts, $opt);
+        }
+    }
+    main($filename, $opts);
+}
